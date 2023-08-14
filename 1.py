@@ -1,20 +1,26 @@
 from flask import Flask, request, jsonify
-import requests
+import aiohttp
 import asyncio
 
 app = Flask(__name__)
 
-async def fetch_data(url):
+async def fetch_data(session, url):
     try:
-        response = await asyncio.wait_for(requests.get(url), timeout=5)
-        if response.status_code == 200:
-            return response.json().get("numbers", [])
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data.get("numbers", [])
     except asyncio.TimeoutError:
         print(f"Timeout while fetching data from {url}")
     except Exception as e:
         print(f"Error while fetching data from {url}: {e}")
     return []
 
+async def fetch_all_data(urls):
+    async with aiohttp.ClientSession() as session:
+        tasks = [fetch_data(session, url) for url in urls]
+        results = await asyncio.gather(*tasks)
+        return results
 
 @app.route('/numbers', methods=['GET'])
 def get_numbers():
@@ -22,8 +28,7 @@ def get_numbers():
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    tasks = [fetch_data(url) for url in urls]
-    results = loop.run_until_complete(asyncio.gather(*tasks))
+    results = loop.run_until_complete(fetch_all_data(urls))
     loop.close()
 
     merged_numbers = sorted(list(set([num for sublist in results for num in sublist])))
